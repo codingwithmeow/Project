@@ -16,11 +16,11 @@ Adafruit_NeoPixel pixels(NUMPIXELS, RGB_PIN, NEO_GRB + NEO_KHZ800);
 DHT dht(DHTPIN, DHTTYPE);
 
 // Replace with your Thingspeak API key
-char* thingSpeakApiKey = "EGAZB630GY1CKAHJ";
+char* thingSpeakApiKey = "**********";
 
 // Replace with your WiFi credentials
-char* ssid = "meow";
-char* password = "880ba0ed2335";
+char* ssid = "*********";
+char* password = "***********";
 
 float humidity;
 float temperature;
