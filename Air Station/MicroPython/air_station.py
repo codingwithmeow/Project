@@ -1,124 +1,135 @@
-// Derining libraries
-#include <WiFi.h>
-#include <Wire.h>
-#include <DHT.h>
-#include <Adafruit_NeoPixel.h>
-#include "ACROBOTIC_SSD1306.h"
+# Control an LED and read a Button using a web browser
+import time
+import network
+import socket
+from machine import Pin,PWM,ADC
+from picobricks import SSD1306_I2C,WS2812, DHT11,NEC_16, IR_RX
+from utime import sleep
+import utime
+import urequests
 
-#define DHTPIN 11
-#define DHTTYPE DHT11
-#define BUZZER 20
-#define RGB_PIN 6
-#define NUMPIXELS 1
+THINGSPEAK_WRITE_API_KEY = '7VIQUHPB1EY438R2'
+HTTP_HEADERS = {'Content-Type': 'application/json'}
 
-Adafruit_NeoPixel pixels(NUMPIXELS, RGB_PIN, NEO_GRB + NEO_KHZ800);
+buzzer = PWM(Pin(20))
 
-DHT dht(DHTPIN, DHTTYPE);
+WIDTH = 128
+HEIGHT = 64
+sda=machine.Pin(4)
+scl=machine.Pin(5)
+i2c=machine.I2C(0,sda=sda, scl=scl, freq=1000000)
+oled = SSD1306_I2C(WIDTH, HEIGHT, i2c)
 
-// Replace with your Thingspeak API key
-char* thingSpeakApiKey = "EGAZB630GY1CKAHJ";
+ws = WS2812(6, brightness=0.4)
+ws.pixels_fill((0 ,0 ,0 ))
+ws.pixels_show()      
 
-// Replace with your WiFi credentials
-char* ssid = "meow";
-char* password = "880ba0ed2335";
+pico_temp=DHT11(Pin(11, Pin.IN, Pin.PULL_UP))
+current_time=utime.time()
+utime.sleep(1)
 
-float humidity;
-float temperature;
+ssid = "robotistan metro34"
+password = "bmc34RbT124"
 
-WiFiClient espClient;
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+wlan.connect(ssid, password)
 
-void setup() {
-  Serial.begin(115200);
-  Wire.begin();
+oled.text("Power On",30,0)
+oled.text("Waiting for ",20, 30)
+oled.text("Connection",23, 40)
+oled.show()
+time.sleep(2)
+oled.fill(0)
 
-  // OLED screen setup
-  oled.init();
-  oled.clearDisplay();
 
-  // RGB setup
-  pixels.begin();
-  pixels.clear();
+# Wait for connect or fail
+max_wait = 10
+while max_wait > 0:
+    if wlan.status() < 0 or wlan.status() >= 3:
+        break
+    max_wait -= 1
+    print('waiting for connection...')
+    time.sleep(1)
+    
+# Handle connection error
+if wlan.status() != 3:
+    raise RuntimeError('network connection failed')
+else:
+    print('Connected')
+    status = wlan.ifconfig()
+    print( 'ip = ' + status[0] )
+    
+    
+# Open socket
+addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
+s = socket.socket()
+s.bind(addr)
+s.listen(1)
+print('listening on', addr)
+oled.text("IP",50, 0)
+oled.text(str(status[0]),20, 10)
+oled.text("Connected",25, 20)
+oled.show()
+# Listen for connections, serve client
+#Servo
 
-  // setting buzzer as output
-  pinMode(BUZZER, OUTPUT);
+if(utime.time() - current_time > 2):
+    current_time = utime.time()
+    try:
+        pico_temp.measure()
+    except:
+        print("measurement failed, will try again soon")
 
-  // start WiFi connection
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Waiting for WiFi connection...");
-    oled.setTextXY(0, 3);
-    oled.putString("Power on");
-    oled.setTextXY(3, 2);
-    oled.putString("Waiting for");
-    oled.setTextXY(4, 2);
-    oled.putString("Connection");
-  }
-
-  Serial.println("WiFi connection successful!");
-  oled.clearDisplay();
-  oled.setTextXY(4, 2);
-  oled.putString("Connected");
-}
-
-void loop() {
-  // Read data from the DHT11 sensor
-  
-  temperature = dht.readTemperature();
-
-  Serial.println("Temperature: ");
-  Serial.println(temperature);
-  delay(1000);
-  oled.setTextXY(0, 1);
-  oled.putString(String(temperature));
-
-  humidity = dht.readHumidity();
-
-  Serial.println("Humidity: ");
-  Serial.println(humidity);
-  oled.setTextXY(0, 3);
-  oled.putString(String(humidity));
-  sendToThingSpeak(temperature, humidity);
-
-  if (temperature >= 25) {
-    pixels.setPixelColor(0, pixels.Color(255, 0, 0));
-    pixels.show();
-  }
-  if (temperature > 10 && temperature < 25) {
-    pixels.setPixelColor(0, pixels.Color(255, 255, 0));
-    pixels.show();
-  }
-  if (temperature <= 10) {
-    pixels.setPixelColor(0, pixels.Color(0, 0, 255));
-    pixels.show();
-  }
-  if (temperature < 4) {
-    oled.setTextXY(0, 5);
-    oled.putString("There is a danger of icing");
-    for (int i = 0; i < 4 ; i++) {
-      tone(BUZZER, 831);
-      delay(500);
-      noTone(BUZZER);
-    }
-  }
-
-  delay(2000);
-}
-
-void sendToThingSpeak(float value1, float value2) {
-  // ThingSpeak API address
-  String apiUrl = "http://api.thingspeak.com/update?api_key=" + String(thingSpeakApiKey) + "&field1=" + String(value1) + "&field2=" + String(value2);
-
-  // Sending HTTP GET request
-  WiFiClient client;
-  if (client.connect("api.thingspeak.com", 80)) {
-    client.println("GET " + apiUrl + " HTTP/1.1");
-    client.println("Host: api.thingspeak.com");
-    client.println("Connection: close");
-    client.println();
-    delay(1000); // Short wait for data sending
-    client.stop();
-  } else {
-    Serial.println("Error connecting to ThingSpeak.");
-  }
-}
+temperature=pico_temp.temperature
+humidity=pico_temp.humidity
+   
+while True:
+    oled.fill(0)
+    
+    if(utime.time() - current_time > 2):
+        current_time = utime.time()
+        try:
+            pico_temp.measure()
+        except:
+            print("measurement failed, will try again soon")
+            
+    oled.fill(0)#clear OLED
+    oled.show()
+    
+    
+    temperature=pico_temp.temperature
+    humidity=pico_temp.humidity
+    
+    oled.text("Temp: ",15,0)#print "Temperature: " on the OLED at x=15 y=10
+    oled.text(str(int(temperature)),55,0)
+    oled.text("Hum: ", 15,10)
+    oled.text(str(int(humidity)),55,10)
+    oled.show()#show on OLED
+    utime.sleep(0.5)#wait for a half second
+        
+    dht_readings = {'field1':temperature, 'field2':humidity}
+    request = urequests.post( 'http://api.thingspeak.com/update?api_key=' + THINGSPEAK_WRITE_API_KEY, json = dht_readings, headers = HTTP_HEADERS )  
+    request.close() 
+    print(dht_readings)
+    
+    if(temperature >= 25):
+        ws.pixels_fill((255, 0, 0))
+        ws.pixels_show()
+    elif(temperature > 10 and temperature < 25):
+        ws.pixels_fill((255, 255, 0))
+        ws.pixels_show()
+    elif(temperature <= 10):
+        ws.pixels_fill((0, 0, 255))
+        ws.pixels_show()
+        
+    if (temperature < 4 ):
+        oled.text("There is a danger of icing")
+        for i in range((3)):
+            buzzer.duty_u16(2000)
+            buzzer.freq(831)
+            time.sleep(0.25) 
+    
+    buzzer.duty_u16(0)
+    time.sleep(0.25)
+          
