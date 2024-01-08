@@ -1,2 +1,2 @@
 # Project
-This repository will be included in some projects based on Arduino, Raspberry Pi, PicoBricks.
+This repository will be included in some projects based on Arduino, Micropython for Raspberry Pi PicoBricks.
